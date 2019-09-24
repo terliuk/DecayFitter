@@ -5,6 +5,7 @@ from scipy import special
 class AnalyticCalculator:
     
     def __init__(self, bin_edges, 
+                 Xe136eff = 0.95,  
                  livetime = 1.0):
         self.flatRate = 2.4e-4+1.4e-3+3.0e-4 ## events / y / t / keV
         self.fidMass  = 12.0 ### in tons
@@ -13,6 +14,7 @@ class AnalyticCalculator:
         self.b        = 0.0008
         self.ABi214   = 0.331 # total rate events / y / t
         self.AXe136   = 0.0 # total rate / y / t
+        self.Xe136eff = Xe136eff
         #
         self.setBins(bin_edges)
         #
@@ -36,7 +38,7 @@ class AnalyticCalculator:
         # the cumulative expectation is 0.5 + 0.5*erf(xi)
         # but we are interested in event counts in bins, 
         # so bin content  = A*0.5*(erf(bin_edge_i+1) - erf(bin_edge_i))
-        return self.AXe136*0.5*(special.erf(xi_vals[1:]) - special.erf(xi_vals[0:-1]) )*self.fidMass*self.livetime
+        return self.AXe136*0.5*(special.erf(xi_vals[1:]) - special.erf(xi_vals[0:-1]) )*self.fidMass*self.livetime*self.Xe136eff
     
     def getBinnedExpectation(self, 
                              AXe136 = 0.0, 
