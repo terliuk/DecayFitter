@@ -15,7 +15,7 @@ class AnalyticCalculator:
         self.ABi214   = 0.331 # total rate events / y / t
         self.AXe136   = 0.0 # total rate / y / t
         self.Xe136eff = Xe136eff
-
+        self.QXe136   = 2457.8 # keV
         # 
         self.cont_frac =     5e-3
         self.slope     = - 2.4e-3
@@ -80,6 +80,7 @@ class AnalyticCalculator:
                  )
         return(np.sum(result, axis=1))
     ####
+    ####
     def cache_backgrounds(self):
         for bkg in ["208Tl", 
                     "214Bi", 
@@ -90,6 +91,7 @@ class AnalyticCalculator:
                     cur_exp[1:] -  cur_exp[0:-1]
                    )                
     ####
+    
     def make_cumulative_splines(self):
         ## making cumulative distribution to make our evalation more bin agnostic
         for bkg in ["208Tl", "214Bi", "44Sc"]:
@@ -97,11 +99,11 @@ class AnalyticCalculator:
             cur_spectrum = getattr(self, "spectrum_%s_noscale"%bkg)(energies_cumulative)
             cumulative = np.append([0.0],
                                    np.cumsum(0.5*(cur_spectrum[1:]  + cur_spectrum[0:-1])*(
-                                       energies_cumulative[1:] - energies_cumulative[0:-1]) )
+                                       energies_cumulative[1:] -FlatBkg energies_cumulative[0:-1]) )
                                   )
             setattr(self, "spectrum_%s_cumulative"%bkg, 
                    interpolate.interp1d(energies_cumulative, cumulative))
-    
+    ###
     def setBins(self, bin_edges):
         self.binEdges = bin_edges 
         self.cache_backgrounds()
@@ -110,6 +112,7 @@ class AnalyticCalculator:
                             Scale214Bi,
                             Scale44Sc,
                             Scale208Tl):
+        
         result  = np.zeros(len(self.binEdges)-1, dtype = float)
         result += Scale214Bi*self.hist_214Bi_nonorm
         result += Scale44Sc*self.hist_44Sc_nonorm
@@ -117,39 +120,51 @@ class AnalyticCalculator:
         return(result)
       
     def getIntrinsicBackground(self):
-        return self.flatRate*(self.binEdges[1:] - self.binEdges[0:-1])
-    '''    
+        result  = np.zeros(len(self.binEdges)-1, dtype = float)
+        result += self.getFlatBackground()
+        return(result)
+    
+    def getFlatBackground(self):
+        return( self.flatRate*(self.binEdges[1:] - self.binEdges[0:-1])*self.fidMass * self.livetime )
+    
+    def getBinnedComponents(self, 
+                            Scale214Bi, 
+                            Scale44Sc, 
+                            Scale208Tl, 
+                            flatRate): 
+        self.flatRate   = flatRate
+        self.Scale214Bi = Scale214Bi
+        self.Scale44Sc  = Scale44Sc
+        self.Scale208Tl = Scale208Tl
+        result = {}
+        result['FlatBkg'] = self.getFlatBackground()
+        result['214Bi']   = self.hist_214Bi_nonorm*self.Scale214Bi*self.fidMass * self.livetime
+        result['44Sc']    = self.hist_44Sc_nonorm*self.Scale44Sc*self.fidMass * self.livetime
+        result['208Tl']   = self.hist_208Tl_nonorm*self.Scale208Tl*self.fidMass * self.livetime
+        return(result)
+        
+    def getBinnedExpectation(self, 
+                            Scale214Bi, 
+                            Scale44Sc, 
+                            Scale208Tl, 
+                            flatRate):
 
-    
-    def getFlatBkg(self): 
-        return self.flatRate*(self.binEdges[1:] - self.binEdges[0:-1])*self.fidMass*self.livetime
-    
+        
+        result  = np.zeros(len(self.binEdges)-1)
+        components = self.getBinnedComponents(  Scale214Bi =Scale214Bi, 
+                                                Scale44Sc  =Scale44Sc, 
+                                                Scale208Tl =Scale208Tl, 
+                                                flatRate   =flatRate)
+        for key in components.keys():
+            result+=components[key]
+        return(result)
+    def getXe136(self)
 
     def getXe136(self):
-        mean = 2457.8  # 
         sigma = (self.a / np.sqrt(mean) + self.b)*mean
         xi_vals = (self.binEdges - mean) /(np.sqrt(2) * sigma)
         # the cumulative expectation is 0.5 + 0.5*erf(xi)
         # but we are interested in event counts in bins, 
         # so bin content  = A*0.5*(erf(bin_edge_i+1) - erf(bin_edge_i))
         return self.AXe136*0.5*(special.erf(xi_vals[1:]) - special.erf(xi_vals[0:-1]) )*self.fidMass*self.livetime*self.Xe136eff
-    
-    def getBinnedExpectation(self, 
-                             AXe136 = 0.0, 
-                             ABi214 = None, 
-                             flatRate = None
-                             ):
-        if ABi214 != None: 
-            self.ABi214 = ABi214
-        if flatRate != None: 
-            self.flatRate = flatRate
-        self.AXe136 = AXe136
-        ####
-        expectation = np.zeros(len(self.binEdges) -1)
-        expectation += self.getFlatBkg()
-        expectation += self.getBi214()
-        expectation += self.getXe136()
-        ### All these expectations are made per year, now we need to multiply it with livetime
-        self.last_expectation = np.array(expectation)
-        return self.last_expectation
-    '''
+
