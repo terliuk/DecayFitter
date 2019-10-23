@@ -99,7 +99,7 @@ class AnalyticCalculator:
             cur_spectrum = getattr(self, "spectrum_%s_noscale"%bkg)(energies_cumulative)
             cumulative = np.append([0.0],
                                    np.cumsum(0.5*(cur_spectrum[1:]  + cur_spectrum[0:-1])*(
-                                       energies_cumulative[1:] -FlatBkg energies_cumulative[0:-1]) )
+                                       energies_cumulative[1:] -energies_cumulative[0:-1]) )
                                   )
             setattr(self, "spectrum_%s_cumulative"%bkg, 
                    interpolate.interp1d(energies_cumulative, cumulative))
@@ -131,38 +131,46 @@ class AnalyticCalculator:
                             Scale214Bi, 
                             Scale44Sc, 
                             Scale208Tl, 
-                            flatRate): 
+                            flatRate,
+                            AXe136 ): 
         self.flatRate   = flatRate
         self.Scale214Bi = Scale214Bi
         self.Scale44Sc  = Scale44Sc
         self.Scale208Tl = Scale208Tl
+        self.AXe136     = AXe136
         result = {}
         result['FlatBkg'] = self.getFlatBackground()
         result['214Bi']   = self.hist_214Bi_nonorm*self.Scale214Bi*self.fidMass * self.livetime
         result['44Sc']    = self.hist_44Sc_nonorm*self.Scale44Sc*self.fidMass * self.livetime
         result['208Tl']   = self.hist_208Tl_nonorm*self.Scale208Tl*self.fidMass * self.livetime
+        result['Xe136_0vbb'] = self.getXe136_0vbb()
         return(result)
         
     def getBinnedExpectation(self, 
                             Scale214Bi, 
                             Scale44Sc, 
                             Scale208Tl, 
-                            flatRate):
+                            flatRate, 
+                            AXe136):
 
         
         result  = np.zeros(len(self.binEdges)-1)
-        components = self.getBinnedComponents(  Scale214Bi =Scale214Bi, 
-                                                Scale44Sc  =Scale44Sc, 
-                                                Scale208Tl =Scale208Tl, 
-                                                flatRate   =flatRate)
+        components = self.getBinnedComponents(  Scale214Bi = Scale214Bi, 
+                                                Scale44Sc  = Scale44Sc, 
+                                                Scale208Tl = Scale208Tl, 
+                                                flatRate   = flatRate,
+                                                AXe136     = AXe136)
         for key in components.keys():
             result+=components[key]
         return(result)
-    def getXe136(self)
-
-    def getXe136(self):
-        sigma = (self.a / np.sqrt(mean) + self.b)*mean
-        xi_vals = (self.binEdges - mean) /(np.sqrt(2) * sigma)
+    
+    def spectrum_136Xe_0vbb(self, E_array): 
+        sigma = (self.a / np.sqrt(self.QXe136) + self.b)*self.QXe136
+        return (1.0 /(np.sqrt(2*np.pi) *sigma) * np.exp( - 0.5*(E_array - self.QXe136)**2 / (sigma**2 ) )  )
+    
+    def getXe136_0vbb(self):
+        sigma = (self.a / np.sqrt(self.QXe136) + self.b)*self.QXe136
+        xi_vals = (self.binEdges - self.QXe136) /(np.sqrt(2) * sigma)
         # the cumulative expectation is 0.5 + 0.5*erf(xi)
         # but we are interested in event counts in bins, 
         # so bin content  = A*0.5*(erf(bin_edge_i+1) - erf(bin_edge_i))
