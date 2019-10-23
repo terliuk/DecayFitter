@@ -8,17 +8,17 @@ class BinnedFitter:
         self.loader = loader
         self.priors = {}
         self.fitparamlist = ["AXe136", 
-                             "ABi214", 
+                             "Scale208Tl",
                              "flatRate"]
-        self.default_fitvals = {"AXe136": [1.0, False], 
-                                "ABi214": [1.0, False], 
-                                "flatRate": [0.5, False]}
-        
-        self.default_limits = {"AXe136": (0.0, np.inf), 
-                          "ABi214": (0.0, np.inf), 
-                          "flatRate": (0.0, np.inf), 
+        self.default_fitvals = {"AXe136": [1.0, False],
+                                "Scale208Tl" : [0.83, False], 
+                                "flatRate" : [0.05, False]}
+        self.default_limits = {"AXe136": (0.0, np.inf),
+                               "Scale208Tl" : (0.0, np.inf), 
+                               "flatRate" : (0.0, np.inf)
                          }
         self.default_priors = {}
+        
     def FitValue(self,
                 histogram, 
                 fitvalues = {}, 
@@ -28,6 +28,7 @@ class BinnedFitter:
                 ftol = 0.001, 
                 minos = False, 
                 verbosity = True):
+        
         self.verbose = verbosity
         self.histogram = np.array(histogram)
         self.priors = self.default_priors
@@ -89,9 +90,16 @@ class BinnedFitter:
         result['valid'] = self.min_result.fmin.is_valid
         result['LLH']  = self.minimizer.fval
         return result
-    def LLH(self, AXe136  = 0.0, ABi214 = 0.0, flatRate = 0.0):    
+    def SetVerbosity(self, verb):
+        self.verbose = verb
+        
+    def LLH(self, AXe136  = 0.0, 
+                  Scale208Tl = 0.0, 
+                  flatRate = 0.0):    
         expectation = self.loader.getBinnedExpectation(AXe136 = AXe136, 
-                                                       ABi214 = ABi214, 
+                                                       Scale208Tl = Scale208Tl, 
+                                                       Scale214Bi = Scale208Tl / 40.0, 
+                                                       Scale44Sc  = Scale208Tl / 200.0, 
                                                        flatRate = flatRate)
         #expectation[expectation < 0.0] = 0.0
         LLH = (- np.sum(  (self.histogram*np.log(expectation) - expectation))  )
@@ -103,5 +111,5 @@ class BinnedFitter:
             for v in self.printvals:
                 pr_line+=" |" + ("%0.5f"%getattr(self.loader, v) ).rjust(10)
             print(pr_line)
-        
+            if(np.isnan(LLH)): print(expectation)
         return LLH

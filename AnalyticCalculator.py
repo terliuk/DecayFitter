@@ -6,9 +6,10 @@ class AnalyticCalculator:
     
     def __init__(self, bin_edges, 
                  Xe136eff = 0.95,  
-                 livetime = 1.0):
+                 livetime = 1.0,
+                 fidMass  = 12.0):
         self.flatRate = 2.4e-4+1.4e-3+3.0e-4 ## events / y / t / keV for 
-        self.fidMass  = 12.0 ### in tons
+        self.fidMass  = fidMass ### in tons
         self.livetime = livetime  ### in years
         self.a        = 0.3171 # resolution sigma  = (a /sqrt(E ) + b )* E, where E in keV
         self.b        = 0.0015
