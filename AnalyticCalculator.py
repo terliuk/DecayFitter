@@ -10,7 +10,7 @@ class AnalyticCalculator:
                  fidMass  = 5.0):
         self.B8scale    =  2.36e-4
         self.Rn222scale =  3.14e-4
-        self.Rn222slope = - 4.2e-7
+        self.Rn222slope = -4.2e-7
         self.Xe137scale =  1.42e-3
         self.Xe137slope = -1.28e-6
         ###
@@ -58,16 +58,12 @@ class AnalyticCalculator:
 
 
         # 
-        self.make_cumulative_splines()
         self.setBins(bin_edges)
-        self.cache_backgrounds()
         #
     def SetResoultion(a, b):
         self.a = a
         self.b = b 
-        self.make_cumulative_splines()
-        self.setBins(bin_edges)
-        self.cache_backgrounds()
+        self.setBins(self.bin_edges) # recaching 
     ###
     ### Basic shape functions
     def sigma_E(self, E):
@@ -137,7 +133,7 @@ class AnalyticCalculator:
     def make_cumulative_splines(self):
         ## making cumulative distribution to make our evalation more bin agnostic
         for bkg in ["208Tl", "214Bi", "44Sc"]:
-            energies_cumulative = np.linspace(1,3200,6400)
+            energies_cumulative = np.linspace(self.binEdges[0], self.binEdges[-1] , int((self.binEdges[-1]-self.binEdges[0])*10)+1 ) # 0.1 keV
             cur_spectrum = getattr(self, "spectrum_%s_noscale"%bkg)(energies_cumulative)
             cumulative = np.append([0.0],
                                    np.cumsum(0.5*(cur_spectrum[1:]  + cur_spectrum[0:-1])*(
@@ -148,12 +144,14 @@ class AnalyticCalculator:
     ###
     def setBins(self, bin_edges):
         self.binEdges = bin_edges 
+        self.make_cumulative_splines()
         self.cache_backgrounds()
+        #self.cache_backgrounds()
     
-    def getMaterialBkg(self, 
+    def getMaterialBkg(self,
+                            Scale208Tl, 
                             Scale214Bi,
-                            Scale44Sc,
-                            Scale208Tl):
+                            Scale44Sc):
         
         result  = np.zeros(len(self.binEdges)-1, dtype = float)
         result += Scale214Bi*self.hist_214Bi_nonorm
@@ -172,9 +170,9 @@ class AnalyticCalculator:
     #    return( self.flatRate*(self.binEdges[1:] - self.binEdges[0:-1])*self.fidMass * self.livetime )
     
     def getBinnedComponents(self, 
+                            Scale208Tl, 
                             Scale214Bi, 
                             Scale44Sc, 
-                            Scale208Tl, 
                             AXe136 ): 
         self.Scale214Bi = Scale214Bi
         self.Scale44Sc  = Scale44Sc
@@ -191,10 +189,9 @@ class AnalyticCalculator:
         return(result)
         
     def getBinnedExpectation(self, 
+                            Scale208Tl, 
                             Scale214Bi, 
                             Scale44Sc, 
-                            Scale208Tl, 
-                            flatRate, 
                             AXe136):
 
         
@@ -202,7 +199,6 @@ class AnalyticCalculator:
         components = self.getBinnedComponents(  Scale214Bi = Scale214Bi, 
                                                 Scale44Sc  = Scale44Sc, 
                                                 Scale208Tl = Scale208Tl, 
-                                                flatRate   = flatRate,
                                                 AXe136     = AXe136)
         for key in components.keys():
             result+=components[key]

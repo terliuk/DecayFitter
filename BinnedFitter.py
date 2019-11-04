@@ -8,14 +8,19 @@ class BinnedFitter:
         self.loader = loader
         self.priors = {}
         self.fitparamlist = ["AXe136", 
+                               ## Scales for material background
                              "Scale208Tl",
-                             "flatRate"]
+                             "Scale214Bi", 
+                            ]
         self.default_fitvals = {"AXe136": [1.0, False],
-                                "Scale208Tl" : [0.83, False], 
+                               ## Scales for material background
+                                "Scale214Bi" : [ 9.278e-02, False], 
+                                "Scale208Tl" : [ 2.339e+00, False], 
                                 "flatRate" : [0.05, False]}
         self.default_limits = {"AXe136": (0.0, np.inf),
+                               ## Scales for material background
                                "Scale208Tl" : (0.0, np.inf), 
-                               "flatRate" : (0.0, np.inf)
+                               "Scale214Bi" : (0.0, np.inf)
                          }
         self.default_priors = {}
         
@@ -94,13 +99,12 @@ class BinnedFitter:
         self.verbose = verb
         
     def LLH(self, AXe136  = 0.0, 
-                  Scale208Tl = 0.0, 
-                  flatRate = 0.0):    
+                  Scale208Tl = 0.0  ,                
+                  Scale214Bi = 0.0, ):    
         expectation = self.loader.getBinnedExpectation(AXe136 = AXe136, 
                                                        Scale208Tl = Scale208Tl, 
-                                                       Scale214Bi = Scale208Tl / 40.0, 
-                                                       Scale44Sc  = Scale208Tl / 200.0, 
-                                                       flatRate = flatRate)
+                                                       Scale214Bi = Scale214Bi, 
+                                                       Scale44Sc  = Scale208Tl / 100.0)
         #expectation[expectation < 0.0] = 0.0
         LLH = (- np.sum(  (self.histogram*np.log(expectation) - expectation))  )
         for key in self.priors.keys():
