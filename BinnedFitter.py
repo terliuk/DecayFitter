@@ -7,20 +7,27 @@ class BinnedFitter:
     def __init__(self, loader ):
         self.loader = loader
         self.priors = {}
-        self.fitparamlist = ["AXe136", 
-                               ## Scales for material background
+        self.fitparamlist = ["AXe136",  
                              "Scale208Tl",
                              "Scale214Bi", 
+                             "Scale137Xe", 
+                             "Scale222Rn",
+                             "Scale8B",
                             ]
         self.default_fitvals = {"AXe136": [1.0, False],
-                               ## Scales for material background
-                                "Scale214Bi" : [ 9.278e-02, False], 
-                                "Scale208Tl" : [ 2.339e+00, False], 
-                                "flatRate" : [0.05, False]}
-        self.default_limits = {"AXe136": (0.0, np.inf),
-                               ## Scales for material background
-                               "Scale208Tl" : (0.0, np.inf), 
-                               "Scale214Bi" : (0.0, np.inf)
+                                "Scale208Tl" :[3.0, False],
+                                "Scale214Bi" : [0.5, False],
+                                "Scale137Xe" : [0.01, False],
+                                "Scale222Rn" : [0.01, False],
+                                "Scale8B"    : [0.01, False],
+                                
+                               }
+        self.default_limits = {"AXe136"     : (0.0, np.inf),
+                               "Scale208Tl" : (0.0, np.inf),
+                               "Scale214Bi" : (0.0, np.inf),
+                               "Scale137Xe" : (0.0, np.inf),
+                               "Scale222Rn" : (0.0, np.inf),
+                               "Scale8B"    : (0.0, np.inf),
                          }
         self.default_priors = {}
         
@@ -73,7 +80,7 @@ class BinnedFitter:
         self.printvals = []
         if self.verbose > 1:
             print("-"*10 +" Call summary "+ "-"*10)
-            pr_str = "LLH".ljust(10)
+            pr_str = "LLH".ljust(12)
             for v in self.fitparamlist:
                 if self.fitvals[v][1] == True : continue
                 self.printvals.append(v)
@@ -98,19 +105,20 @@ class BinnedFitter:
     def SetVerbosity(self, verb):
         self.verbose = verb
         
-    def LLH(self, AXe136  = 0.0, 
-                  Scale208Tl = 0.0  ,                
-                  Scale214Bi = 0.0, ):    
+    def LLH(self,  AXe136, Scale208Tl, Scale214Bi, Scale137Xe, Scale222Rn, Scale8B ):    
         expectation = self.loader.getBinnedExpectation(AXe136 = AXe136, 
                                                        Scale208Tl = Scale208Tl, 
                                                        Scale214Bi = Scale214Bi, 
-                                                       Scale44Sc  = Scale208Tl / 100.0)
+                                                       Scale44Sc  = Scale208Tl / 100.0, 
+                                                       Scale137Xe = Scale137Xe, 
+                                                       Scale222Rn = Scale222Rn, 
+                                                       Scale8B    = Scale8B)
         #expectation[expectation < 0.0] = 0.0
         LLH = (- np.sum(  (self.histogram*np.log(expectation) - expectation))  )
         for key in self.priors.keys():
             LLH += 0.5*( getattr(self.loader, key) - self.priors[key][0])**2 / self.priors[key][1]
         pr_line = ""
-        pr_line+= ("%0.5f"%LLH).ljust(10)
+        pr_line+= ("%0.5f"%LLH).ljust(12)
         if self.verbose > 1:
             for v in self.printvals:
                 pr_line+=" |" + ("%0.5f"%getattr(self.loader, v) ).rjust(10)
