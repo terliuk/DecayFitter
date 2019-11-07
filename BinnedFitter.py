@@ -13,6 +13,7 @@ class BinnedFitter:
                              "Scale137Xe", 
                              "Scale222Rn",
                              "Scale8B",
+                             "T12_136Xe_2vbb" 
                             ]
         self.default_fitvals = {"AXe136": [1.0, False],
                                 "Scale208Tl" :[3.0, False],
@@ -20,7 +21,15 @@ class BinnedFitter:
                                 "Scale137Xe" : [0.01, False],
                                 "Scale222Rn" : [0.01, False],
                                 "Scale8B"    : [0.01, False],
-                                
+                                "T12_136Xe_2vbb"  : [2.0, False]
+                               }
+        self.default_errors = {"AXe136": 0.2,
+                                "Scale208Tl" : 0.3,
+                                "Scale214Bi" : 0.1,
+                                "Scale137Xe" : 0.03,
+                                "Scale222Rn" : 0.03,
+                                "Scale8B"    : 0.03,
+                                "T12_136Xe_2vbb"  : 0.1
                                }
         self.default_limits = {"AXe136"     : (0.0, np.inf),
                                "Scale208Tl" : (0.0, np.inf),
@@ -28,6 +37,7 @@ class BinnedFitter:
                                "Scale137Xe" : (0.0, np.inf),
                                "Scale222Rn" : (0.0, np.inf),
                                "Scale8B"    : (0.0, np.inf),
+                               "T12_136Xe_2vbb" : (0.0, np.inf)
                          }
         self.default_priors = {}
         
@@ -40,7 +50,7 @@ class BinnedFitter:
                 ftol = 0.001, 
                 minos = False, 
                 verbosity = True):
-        
+        self.smooth = True
         self.verbose = verbosity
         self.histogram = np.array(histogram)
         self.priors = self.default_priors
@@ -49,9 +59,11 @@ class BinnedFitter:
         self.fitvals.update(fitvalues)
         self.limits = dict(self.default_limits)
         self.limits.update(bounds)
+        self.errors = dict(self.default_errors)
+        self.errors.update(errors)
         errordict = {}
-        for key in errors.keys():
-            errordict["error_"+key] = errors[key]
+        for key in self.errors.keys():
+            errordict["error_"+key] = self.errors[key]
         #### setting limits
         limitdict = {}
         for key in self.limits.keys():
@@ -59,7 +71,7 @@ class BinnedFitter:
         if self.verbose > 0: 
             print("-"*10 + " Boundaries " + "-"*10)
             for key in self.limits.keys():
-                print(key.ljust(10) + "in  %s " %(str(self.limits[key])) )
+                print(key.ljust(15) + "in  %s " %(str(self.limits[key])) )
             print("-"*30)
         ### 
         fixdict = {}
@@ -67,13 +79,18 @@ class BinnedFitter:
         for key in self.fitvals.keys():
             startdict[key] = self.fitvals[key][0]
             fixdict["fix_"+key] = self.fitvals[key][1]
+        if self.verbose > 0: 
+            print("-"*10 + " Starting values: " + "-"*10)
+            for key in self.fitvals.keys():
+                print(key.ljust(15) + "= %0.5f , is fixed %r" %(startdict[key],fixdict["fix_"+key]) )
+            print("-"*30)
         ## we are using Poisson LLH, so errordef must be 0.5
         
         if self.verbose > 0:
             print("-"*10 + " Prior information " + "-"*10)
-            print("Variable".ljust(12) + "mean".rjust(12) + "sigma".rjust(12))
+            print("Variable".ljust(15) + "mean".rjust(12) + "sigma".rjust(12))
             for v in self.priors.keys():
-                print(v.ljust(12) + 
+                print(v.ljust(14) + 
                       ("%0.5f"%self.priors[v][0]).rjust(12) + 
                       ("%0.5f"%self.priors[v][1]).rjust(12) ) 
             print("-"*39)
@@ -86,33 +103,90 @@ class BinnedFitter:
                 self.printvals.append(v)
                 pr_str += " |" + ("%s"%v).rjust(10)
             print(pr_str)
+        success = False
+        n_failed = 0
+        failed_LLHs = []
+        while not success: 
+            self.minimizer = iminuit.Minuit(self.LLH,
+                                    errordef = 0.5,
+                                    **startdict,
+                                    **fixdict,
+                                    **errordict, 
+                                    **limitdict)
+            self.minimizer.strategy = 1
+            if ftol > 0.0: self.minimizer.tol = ftol
+            self.min_result = self.minimizer.migrad()
+            if not self.min_result.fmin.is_valid:
+                self.minimizer.strategy = 2
+                self.min_result = self.minimizer.migrad()
+            if self.min_result.fmin.is_valid:
+                success = True
+            else: 
+                self.smooth=False
+                failed_LLHs.append(self.minimizer.fval)
+                n_failed+=1
+                if n_failed> 10:
+                    print("WARNING! Minimizer failed %i attemts, continuing!"%n_failed)
+                    print("list of failed LLHs: ",failed_LLHs)
+                    success=True
+                print("WARNING! Minimizer failed for given tolerance.. trying to perturb the seed")
+                if self.verbose>0: 
+                    print("Old starting values : \n", startdict)
+                for key in startdict.keys():
+                    if not fixdict["fix_"+key]: 
+                        startdict[key] = dict(self.minimizer.values)[key]*(0.5 + 1.0*np.random.uniform())
+                    self.minimizer = iminuit.Minuit(self.LLH,
+                                    errordef = 0.5,
+                                    **startdict,
+                                    **fixdict,
+                                    **errordict, 
+                                    **limitdict)
+                if self.verbose>0: print("new starting values: \n", startdict)
                 
-        self.minimizer = iminuit.Minuit(self.LLH,
-                                errordef = 0.5,
-                                **startdict,
-                                **fixdict,
-                                **errordict, 
-                                **limitdict)
-        if ftol > 0.0: self.minimizer.tol = ftol
-        self.min_result = self.minimizer.migrad()
         if minos: 
             print( "===== Minimization finshed, getting errors =======")
             self.min_errors = fitter.minimizer.minos()
+        if self.verbose > 0: print( "===== Finished the minimization =======")
+
         result = dict(self.minimizer.values)
         result['valid'] = self.min_result.fmin.is_valid
         result['LLH']  = self.minimizer.fval
+        if not self.smooth:
+            print("There were warnings during the fit, here are the results")
+            toprint = result.keys()
+            for key in toprint:
+                print(key.ljust(20),  result[key],)
+        result['fitted_histogram'] = self.getExpectation(**dict(self.minimizer.values))
         return result
     def SetVerbosity(self, verb):
         self.verbose = verb
-        
-    def LLH(self,  AXe136, Scale208Tl, Scale214Bi, Scale137Xe, Scale222Rn, Scale8B ):    
-        expectation = self.loader.getBinnedExpectation(AXe136 = AXe136, 
+    def getExpectation(self, AXe136, Scale208Tl, Scale214Bi, Scale137Xe, Scale222Rn, Scale8B, T12_136Xe_2vbb )  :
+        return self.loader.getBinnedExpectation(AXe136 = AXe136, 
                                                        Scale208Tl = Scale208Tl, 
                                                        Scale214Bi = Scale214Bi, 
                                                        Scale44Sc  = Scale208Tl / 100.0, 
                                                        Scale137Xe = Scale137Xe, 
                                                        Scale222Rn = Scale222Rn, 
-                                                       Scale8B    = Scale8B)
+                                                       Scale8B    = Scale8B, 
+                                                       T12_136Xe_2vbb = T12_136Xe_2vbb)
+    
+    def LLH(self,  AXe136, Scale208Tl, Scale214Bi, Scale137Xe, Scale222Rn, Scale8B, T12_136Xe_2vbb ):    
+        expectation = self.getExpectation(   AXe136 = AXe136, 
+                                             Scale208Tl = Scale208Tl, 
+                                             Scale214Bi = Scale214Bi, 
+                                             Scale137Xe = Scale137Xe, 
+                                             Scale222Rn = Scale222Rn, 
+                                             Scale8B    = Scale8B, 
+                                             T12_136Xe_2vbb = T12_136Xe_2vbb)
+        
+        #self.loader.getBinnedExpectation(AXe136 = AXe136, 
+        #                                               Scale208Tl = Scale208Tl, 
+        #                                               Scale214Bi = Scale214Bi, 
+        #                                               Scale44Sc  = Scale208Tl / 100.0, 
+        #                                               Scale137Xe = Scale137Xe, 
+        #                                               Scale222Rn = Scale222Rn, 
+        #                                               Scale8B    = Scale8B, 
+        #                                               T12_136Xe_2vbb = T12_136Xe_2vbb)
         #expectation[expectation < 0.0] = 0.0
         LLH = (- np.sum(  (self.histogram*np.log(expectation) - expectation))  )
         for key in self.priors.keys():
@@ -123,5 +197,19 @@ class BinnedFitter:
             for v in self.printvals:
                 pr_line+=" |" + ("%0.5f"%getattr(self.loader, v) ).rjust(10)
             print(pr_line)
-            if(np.isnan(LLH)): print(expectation)
+        if(np.isnan(LLH)): 
+            self.smooth=False
+            print("---------  NAN enocountered --------- ")           
+            print("Expectation",expectation)
+        if np.sum(~(expectation > 0.0) ) >0 :
+            self.smooth=False
+            print("--------- invalid expectation ---------")
+            print("Expectation", expectation)
+            pr_str_names = "LLH".ljust(12)
+            pr_str_values = ("%0.5f"%LLH).ljust(12)
+            for v in self.fitparamlist:
+                pr_str_names   +=" |" +("%s"%v).rjust(10)
+                pr_str_values  +=" |" +("%0.5f"%getattr(self.loader, v) ).rjust(10)
+            print(pr_str_names) 
+            print(pr_str_values)
         return LLH
