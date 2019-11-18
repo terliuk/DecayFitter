@@ -129,33 +129,37 @@ class BinnedFitter:
                     print("WARNING! Minimizer failed %i attemts, continuing!"%n_failed)
                     print("list of failed LLHs: ",failed_LLHs)
                     success=True
-                print("WARNING! Minimizer failed for given tolerance.. trying to perturb the seed")
-                if self.verbose>0: 
-                    print("Old starting values : \n", startdict)
-                for key in startdict.keys():
-                    if not fixdict["fix_"+key]: 
-                        startdict[key] = dict(self.minimizer.values)[key]*(0.5 + 1.0*np.random.uniform())
-                    self.minimizer = iminuit.Minuit(self.LLH,
-                                    errordef = 0.5,
-                                    **startdict,
-                                    **fixdict,
-                                    **errordict, 
-                                    **limitdict)
-                if self.verbose>0: print("new starting values: \n", startdict)
-                
+                if not success:
+                    print("WARNING! Minimizer failed for given tolerance.. trying to perturb the seed")
+                    if self.verbose>0: 
+                        print("Old starting values : \n", startdict)
+                    for key in startdict.keys():
+                        if not fixdict["fix_"+key]: 
+                            startdict[key] = dict(self.minimizer.values)[key]*(0.5 + 1.0*np.random.uniform())
+                        self.minimizer = iminuit.Minuit(self.LLH,
+                                        errordef = 0.5,
+                                        **startdict,
+                                        **fixdict,
+                                        **errordict, 
+                                        **limitdict)
+                    if self.verbose>0: print("new starting values: \n", startdict)
         if minos: 
             print( "===== Minimization finshed, getting errors =======")
             self.min_errors = fitter.minimizer.minos()
-        if self.verbose > 0: print( "===== Finished the minimization =======")
+        if self.verbose > 0: 
+            print( "===== Finished the minimization =======")
 
         result = dict(self.minimizer.values)
         result['valid'] = self.min_result.fmin.is_valid
         result['LLH']  = self.minimizer.fval
-        if not self.smooth:
-            print("There were warnings during the fit, here are the results")
+        if not self.smooth or  self.verbose > 0:
+            if not self.smooth: print("There were warnings during the fit, here are the results")
+            if self.verbose > 0:  print("Best fit results")
             toprint = result.keys()
             for key in toprint:
                 print(key.ljust(20),  result[key],)
+            print( "---"*20)
+
         result['fitted_histogram'] = self.getExpectation(**dict(self.minimizer.values))
         return result
     def SetVerbosity(self, verb):
