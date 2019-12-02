@@ -9,35 +9,35 @@ class BinnedFitter:
         self.priors = {}
         self.fitparamlist = ["AXe136",  
                              "Scale208Tl",
-                             "Scale214Bi", 
-                             "Scale137Xe", 
-                             "Scale222Rn",
-                             "Scale8B",
-                             "T12_136Xe_2vbb" 
+                             "Norm214Bi",
+                             "NormCont",
+                             "ContSlope",
+                             "Scale137Xe",
+                             "T12_136Xe_2vbb"
                             ]
         self.default_fitvals = {"AXe136": [1.0, False],
                                 "Scale208Tl" :[3.0, False],
-                                "Scale214Bi" : [0.5, False],
-                                "Scale137Xe" : [0.01, False],
-                                "Scale222Rn" : [0.01, False],
-                                "Scale8B"    : [0.01, False],
-                                "T12_136Xe_2vbb"  : [2.0, False]
+                                "Norm214Bi" :[1.0, False],
+                                "NormCont" : [1.0, False],
+                                "ContSlope" : [-1.5, False],
+                                "Scale137Xe" : [1.5e-3, False],
+                                "T12_136Xe_2vbb" :[2.0, False]
                                }
         self.default_errors = {"AXe136": 0.2,
                                 "Scale208Tl" : 0.3,
-                                "Scale214Bi" : 0.1,
-                                "Scale137Xe" : 0.03,
-                                "Scale222Rn" : 0.03,
-                                "Scale8B"    : 0.03,
-                                "T12_136Xe_2vbb"  : 0.1
-                               }
+                                "Norm214Bi":0.05,
+                                "NormCont" : 0.05,
+                                "ContSlope" : 1.0,
+                                "Scale137Xe" : 3e-4,
+                                "T12_136Xe_2vbb" : 0.05
+                                }
         self.default_limits = {"AXe136"     : (0.0, np.inf),
                                "Scale208Tl" : (0.0, np.inf),
-                               "Scale214Bi" : (0.0, np.inf),
+                               "Norm214Bi"  : (0.0, 5.0),
+                               "NormCont" : (0.0, 5.0),
+                               "ContSlope" : (-100,100), 
                                "Scale137Xe" : (0.0, np.inf),
-                               "Scale222Rn" : (0.0, np.inf),
-                               "Scale8B"    : (0.0, np.inf),
-                               "T12_136Xe_2vbb" : (0.0, np.inf)
+                               "T12_136Xe_2vbb" : (0.1,3)
                          }
         self.default_priors = {}
         
@@ -164,37 +164,27 @@ class BinnedFitter:
         return result
     def SetVerbosity(self, verb):
         self.verbose = verb
-    def getExpectation(self, AXe136, Scale208Tl, Scale214Bi, Scale137Xe, Scale222Rn, Scale8B, T12_136Xe_2vbb )  :
-        return self.loader.getBinnedExpectation(AXe136 = AXe136, 
-                                                       Scale208Tl = Scale208Tl, 
-                                                       Scale214Bi = Scale214Bi, 
-                                                       Scale44Sc  = Scale208Tl / 100.0, 
-                                                       Scale137Xe = Scale137Xe, 
-                                                       Scale222Rn = Scale222Rn, 
-                                                       Scale8B    = Scale8B, 
-                                                       T12_136Xe_2vbb = T12_136Xe_2vbb)
-    
-    def LLH(self,  AXe136, Scale208Tl, Scale214Bi, Scale137Xe, Scale222Rn, Scale8B, T12_136Xe_2vbb ):    
+    def getExpectation(self,AXe136, Scale208Tl,Norm214Bi,NormCont,ContSlope, Scale137Xe,T12_136Xe_2vbb): 
+        expectation = self.loader.getBinnedExpectation(   AXe136 = AXe136, 
+                                                      Scale208Tl = Scale208Tl,
+                                                       Norm214Bi = Norm214Bi,
+                                                        NormCont = NormCont, 
+                                                       ContSlope = ContSlope,
+                                                      Scale137Xe = Scale137Xe,
+                                                  T12_136Xe_2vbb = T12_136Xe_2vbb)
+        return(expectation)
+    def LLH(self,  AXe136, Scale208Tl,Norm214Bi,NormCont,ContSlope, Scale137Xe,T12_136Xe_2vbb):    
         expectation = self.getExpectation(   AXe136 = AXe136, 
-                                             Scale208Tl = Scale208Tl, 
-                                             Scale214Bi = Scale214Bi, 
-                                             Scale137Xe = Scale137Xe, 
-                                             Scale222Rn = Scale222Rn, 
-                                             Scale8B    = Scale8B, 
-                                             T12_136Xe_2vbb = T12_136Xe_2vbb)
+                                             Scale208Tl = Scale208Tl,
+                                             Norm214Bi  = Norm214Bi,
+                                             NormCont   = NormCont,
+                                             ContSlope  = ContSlope,
+                                             Scale137Xe = Scale137Xe,
+                                         T12_136Xe_2vbb = T12_136Xe_2vbb)
         
-        #self.loader.getBinnedExpectation(AXe136 = AXe136, 
-        #                                               Scale208Tl = Scale208Tl, 
-        #                                               Scale214Bi = Scale214Bi, 
-        #                                               Scale44Sc  = Scale208Tl / 100.0, 
-        #                                               Scale137Xe = Scale137Xe, 
-        #                                               Scale222Rn = Scale222Rn, 
-        #                                               Scale8B    = Scale8B, 
-        #                                               T12_136Xe_2vbb = T12_136Xe_2vbb)
-        #expectation[expectation < 0.0] = 0.0
         LLH = (- np.sum(  (self.histogram*np.log(expectation) - expectation))  )
         for key in self.priors.keys():
-            LLH += 0.5*( getattr(self.loader, key) - self.priors[key][0])**2 / self.priors[key][1]
+            LLH += 0.5* ( getattr(self.loader, key) - self.priors[key][0])**2 / (self.priors[key][1]**2)
         pr_line = ""
         pr_line+= ("%0.5f"%LLH).ljust(12)
         if self.verbose > 1:

@@ -1,5 +1,5 @@
 import numpy as np
-from scipy import special, interpolate
+from scipy import special, interpolate, integrate
 
 
 class AnalyticCalculator:
@@ -8,27 +8,28 @@ class AnalyticCalculator:
                  Xe136eff = 0.90,  
                  livetime = 1.0,
                  fidMass  = 5.0):
-        ## for 5 tons
+        ###
+        self.fidMass  = fidMass ### in tons
+        self.livetime = livetime  ### in years
+        self.a        = 0.3171 # resolution sigma  = (a /sqrt(E ) + b )* E, where E in keV
+        self.b        = 0.0015
+        ## for intrinsic 
         self.Scale8B    =  2.36e-4
         self.Scale222Rn =  3.14e-4
         self.SlopeIndex222Rn = -4.2e-7/3.14e-4
         self.Scale137Xe =  1.42e-3
         self.SlopeIndex137Xe = -1.28e-6/1.42e-3
         ###
-        self.Scale214Bi = 9.278e-02
-        self.Scale208Tl = 2.339e+00
-        self.Scale44Sc  = self.Scale208Tl/100.
-        ###
-        self.fidMass  = fidMass ### in tons
-        self.livetime = livetime  ### in years
-        self.a        = 0.3171 # resolution sigma  = (a /sqrt(E ) + b )* E, where E in keV
-        self.b        = 0.0015
+        self.Scale208Tl = 2.511
+        self.setPeakScales(self.Scale208Tl)
+        self.setContScales()
+        self.Norm214Bi = 1.0
         ####
         self.AXe136   = 0.0 # total rate / y / t
         self.Xe136eff = Xe136eff
         self.QXe136   = 2457.8 # keV
-        self.cont_frac =  2.80149381e-04 
-        self.slope     = -1.23813024e-03
+        self.ContSlope = -1.2
+        self.NormCont  = 1.0
         # Parameters of the background
         self.Xe136_2vbb_T_1_2_central = 2.165 #  # 10^21 y
         self.T12_136Xe_2vbb = 2.165 # y
@@ -61,63 +62,80 @@ class AnalyticCalculator:
         # 
         self.setBins(bin_edges)
         #
-    def setResolution(self, a, b):
-        self.a = a
-        self.b = b 
-        self.setBins(self.binEdges) # since sigma changes background - recalculating all the background components
+    #def setResolution(self, a, b):
+    #    self.a = a
+    #    self.b = b 
+    #    self.setBins(self.binEdges) # since sigma changes background - recalculating all the background components
     ###
+    def setContScales(self):
+        self.ContScale_208Tl =  self.Scale208Tl*1.8e-4*(self.fidMass**0.19)
+        self.ContScale_214Bi =  self.ContScale_208Tl*(4.3e-4*self.fidMass + 3.2e-3 )
+        self.ContScale_44Sc  =  self.ContScale_208Tl*(1.8e-4*self.fidMass + 6.6e-3 )
+    def setPeakScales(self, p_scale):
+        # p scale = scale of 208Tl peak
+        self.Scale208Tl =  p_scale
+        self.Scale214Bi = self.Scale208Tl/(-0.25 * self.fidMass + 29.8)
+        self.Scale44Sc  = self.Scale208Tl/( 0.43 * self.fidMass + 91.6) 
+        self.setContScales()
     ### Basic shape functions
     def sigma_E(self, E):
         return (E * (self.a / np.sqrt(E) + self.b))
-    ### Helper functions common to all backgeounds ###
-    def continuum(self, E, E_peak):
-        return 1. / (1. + np.exp(  (E-E_peak)/2.) ) * (np.exp(self.slope * (E - E_peak)))
+    def continuum(self, E, E_peak, slope):
+        return 1 / (1 + np.exp( (E-E_peak)/5.0) )  * ( np.exp( slope * ( (E - self.QXe136 ) / E_peak ) ) )  
     
     def gauss(self, en, E_center):
         return np.exp( - (en - E_center)**2 / 2.0 / self.sigma_E(E_center)**2 ) / (self.sigma_E(E_center)*np.sqrt(2 * np.pi) )
-    
     def linear_func(self, en, Scale_at_Qbb, sl_lin):
-        return  Scale_at_Qbb *(1. + (en - self.QXe136) * sl_lin)
+        return  Scale_at_Qbb *(1. + (en - self.QXe136) * sl_lin) 
+    #### Material backgrounds
+    # thalium 
+    def spectrum_208Tl_peaks_noscale(self, en):
+        return self.gauss(en, self.E_208Tl_2614)
+    def spectrum_208Tl_continuum_noscale(self, en):
+        return self.continuum(en,self.E_208Tl_2614, self.ContSlope)
     
-    ### material backgrounds 
-    def spectrum_208Tl_noscale(self, E_array):
-        result = (self.gauss(E_array,self.E_208Tl_2614) + self.cont_frac*self.continuum(E_array, self.E_208Tl_2614))
-        return result
+    # scandium     
+    def spectrum_44Sc_peaks_noscale(self, en):
+        return self.gauss(en, self.E_44Sc)   
+    def spectrum_44Sc_continuum_noscale(self, en):
+        return self.continuum(en, self.E_44Sc, self.ContSlope)    
     
-    def spectrum_44Sc_noscale(self, E_array):
-        result = (self.gauss(E_array, self.E_44Sc) + self.cont_frac * self.continuum(E_array, self.E_44Sc))
-        return result
-    
-    def spectrum_214Bi_noscale(self, E_array):
-        ## making 2D eneries, since i don't want to write for loop over peaks
-        en_cur = E_array.repeat(self.Peaks_214Bi.shape[1]).reshape(len(E_array),self.Peaks_214Bi.shape[1])
-        result = ( self.Peaks_214Bi[1, :] / self.Peaks_214Bi[1, 22]*
-                          (self.gauss(en_cur, self.Peaks_214Bi[0, :]) +  
-                           self.cont_frac*self.continuum(en_cur, self.Peaks_214Bi[0, :]) 
-                          )     
+    # bismuth     
+    def spectrum_214Bi_peaks_noscale(self, en):
+        retFloat=False
+        if (type(en)==float):
+            retFloat=True
+            en = np.array([en],dtype=float)        
+        en_cur = en.repeat(self.Peaks_214Bi.shape[1]).reshape(len(en),self.Peaks_214Bi.shape[1])     
+        result = ( self.Peaks_214Bi[1, :] / self.Peaks_214Bi[1, 22] * self.gauss(en_cur, self.Peaks_214Bi[0, :])      
                  )
-        return(np.sum(result, axis=1))
-    ####
+        if retFloat: return(float(np.sum(result, axis=1)))
+        else: return(np.sum(result, axis=1))  
+    def spectrum_214Bi_continuum_noscale(self, en):
+        retFloat=False
+        if (type(en)==float):
+            retFloat=True
+            en = np.array([en],dtype=float)
+        en_cur = en.repeat(self.Peaks_214Bi.shape[1]).reshape(len(en),self.Peaks_214Bi.shape[1])     
+        result = ( self.Peaks_214Bi[1, :] / self.Peaks_214Bi[1, 22] * self.continuum(en_cur, self.Peaks_214Bi[0, :], self.ContSlope)      
+                 )
+        if retFloat: return(float(np.sum(result, axis=1)))
+        else : return(np.sum(result, axis=1))
+    ### combining peaks and continuum with correspoding scales
+    # useful for plots but not necessarily 
+    def spectrum_208Tl(self, en):
+        return self.Scale208Tl*self.spectrum_208Tl_peaks_noscale(en) + self.ContScale_208Tl*self.spectrum_208Tl_continuum_noscale(en)        
+    def spectrum_214Bi(self, en):
+        return self.Scale214Bi*self.spectrum_214Bi_peaks_noscale(en) + self.ContScale_214Bi*self.spectrum_214Bi_continuum_noscale(en)
+    def spectrum_44Sc(self, en):
+        return self.Scale44Sc*self.spectrum_44Sc_peaks_noscale(en) + self.ContScale_44Sc*self.spectrum_44Sc_continuum_noscale(en)    
+    ### and intrinsic backgrounds 
     def spectrum_8B(self, E_array):
         return self.linear_func(E_array,self.Scale8B , 0)
-    def get_8B(self):
-        result = 0.5*(self.spectrum_8B(self.binEdges[1:]) + self.spectrum_8B(self.binEdges[0:-1]) )  
-        result*=(self.binEdges[1:] - self.binEdges[0:-1])
-        return result*self.fidMass * self.livetime
-
     def spectrum_222Rn(self, E_array):
-        return self.linear_func(E_array,self.Scale222Rn,self.SlopeIndex222Rn )   
-    def get_222Rn(self):
-        result = 0.5*(self.spectrum_222Rn(self.binEdges[1:]) + self.spectrum_222Rn(self.binEdges[0:-1]) )  
-        result*=(self.binEdges[1:] - self.binEdges[0:-1])
-        return result*self.fidMass * self.livetime
-     
+        return self.linear_func(E_array,self.Scale222Rn,self.SlopeIndex222Rn )
     def spectrum_137Xe(self, E_array):
-        return self.linear_func(E_array,self.Scale137Xe,self.SlopeIndex137Xe )     
-    def get_137Xe(self):
-        result = 0.5*(self.spectrum_137Xe(self.binEdges[1:]) + self.spectrum_137Xe(self.binEdges[0:-1]) )  
-        result*=(self.binEdges[1:] - self.binEdges[0:-1])
-        return result*self.fidMass * self.livetime
+        return self.linear_func(E_array,self.Scale137Xe,self.SlopeIndex137Xe )   
     #### The most complicated background is 2vbb, 
     # which is first calculated for idealistic spectrum 
     # and then smeared according to the resolution
@@ -137,11 +155,19 @@ class AnalyticCalculator:
         else: 
             result = result if q - t > 0.0 else 0.0
         return result
-    # here I apply smearing
+
     def spectrum_136Xe_2vbb(self, E_array):
+        retFloat=False
+        if (type(E_array)==float):
+            retFloat=True
+            E_array = np.array([E_array],dtype=float)
+        # here I apply smearing
         
-        E_sm_low  = max(0., E_array[0] - 8.*self.sigma_E(E_array[0])) 
-        E_sm_high = min(self.QXe136,  E_array[-1] + 8.*self.sigma_E(E_array[1])) # going +- 8 sigma(e) to be sure
+        E_sm_low  = min(self.QXe136, 
+                        max(0., E_array[0] - 8.*self.sigma_E(E_array[0])) )
+        E_sm_high = min(self.QXe136,  
+                        E_array[-1] + 8.*self.sigma_E(E_array[-1]) ) 
+        # going +- 8 sigma(e) to be sure
         nbins = int(E_sm_high - E_sm_low)*10 # making at least 0.1 keV steps
         ### values for integration
         e_vals = np.linspace(E_sm_low,E_sm_high, nbins+1)
@@ -155,7 +181,111 @@ class AnalyticCalculator:
                             np.exp( - 0.5 *(E_array_2D - e_vals_centers)**2/(self.sigma_E(e_vals_centers)) **2 )*
                             (1./ (np.sqrt(2.*np.pi)*self.sigma_E(e_vals_centers) )) 
                             )
-        return np.sum(y_vals_smeared_2D, axis=1)  
+        if retFloat: return float(np.sum(y_vals_smeared_2D, axis=1) )
+        else: return np.sum(y_vals_smeared_2D, axis=1)  
+    ### and spectrum for signal itself
+    def spectrum_136Xe_0vbb_noscale(self, E_array): 
+        sigma = (self.a / np.sqrt(self.QXe136) + self.b)*self.QXe136
+        return (self.Xe136eff /(np.sqrt(2*np.pi) *sigma) * np.exp( - 0.5*(E_array - self.QXe136)**2 / (sigma**2 ) )  )
+    ### now the caching of different components 
+    def get_8B(self):
+        result = 0.5*(self.spectrum_8B(self.binEdges[1:]) + self.spectrum_8B(self.binEdges[0:-1]) )  
+        result*=(self.binEdges[1:] - self.binEdges[0:-1])
+        return result*self.fidMass * self.livetime
+    def get_222Rn(self):
+        result = 0.5*(self.spectrum_222Rn(self.binEdges[1:]) + self.spectrum_222Rn(self.binEdges[0:-1]) )  
+        result*=(self.binEdges[1:] - self.binEdges[0:-1])
+        return result*self.fidMass * self.livetime
+    def get_137Xe(self):
+        result = 0.5*(self.spectrum_137Xe(self.binEdges[1:]) + self.spectrum_137Xe(self.binEdges[0:-1]) )  
+        result*=(self.binEdges[1:] - self.binEdges[0:-1])
+        return result*self.fidMass * self.livetime
+    def cache_histograms(self, 
+                        sources = ["208Tl_peaks_noscale",
+                                       "208Tl_continuum_noscale",
+                                       "214Bi_peaks_noscale",
+                                       "214Bi_continuum_noscale",
+                                       "44Sc_peaks_noscale",
+                                       "44Sc_continuum_noscale",
+                                       "136Xe_2vbb", 
+                                       "136Xe_0vbb_noscale"]
+                        ):
+        for bkg in sources:
+            cur_spectrum = getattr(self, "spectrum_%s"%bkg)
+            cur_histogram = np.zeros(len(self.binEdges)-1, dtype=float)
+            for i in range(0, len(cur_histogram)):
+                cur_histogram[i] = integrate.quad(cur_spectrum, self.binEdges[i], self.binEdges[i+1])[0]
+            setattr(self,"histogram_%s"%bkg, np.array(cur_histogram))
+        return
+    def setBins(self, bin_edges):
+        self.binEdges = bin_edges 
+        self.cache_histograms()
+    def getBinnedComponents(self, 
+                            AXe136 , 
+                            Scale208Tl,
+                            Norm214Bi,
+                            NormCont,
+                            ContSlope,
+                            Scale137Xe, 
+                            T12_136Xe_2vbb
+                            ): 
+        yt = self.fidMass * self.livetime
+        ###
+        self.setPeakScales(Scale208Tl)
+        self.AXe136 = AXe136
+        self.NormCont = NormCont
+        self.Norm214Bi = Norm214Bi
+        self.Scale137Xe = Scale137Xe
+        self.T12_136Xe_2vbb = T12_136Xe_2vbb
+        if self.ContSlope != ContSlope: 
+            self.ContSlope = ContSlope
+            self.cache_histograms( ["208Tl_continuum_noscale",
+                                    "214Bi_continuum_noscale",
+                                    "44Sc_continuum_noscale"] )
+        ###
+        result = {}
+        result['137Xe']   = self.get_137Xe()
+        result['222Rn']   = self.get_222Rn()
+        result['8B']      = self.get_8B()
+        ###
+        ### materials
+        result['208Tl']  = self.Scale208Tl*self.histogram_208Tl_peaks_noscale*yt
+        result['208Tl'] += self.NormCont*self.ContScale_208Tl*self.histogram_208Tl_continuum_noscale*yt
+        ### materials
+        result['214Bi']  = self.Norm214Bi*self.Scale214Bi*self.histogram_214Bi_peaks_noscale*yt
+        result['214Bi'] += self.NormCont*self.ContScale_214Bi*self.histogram_214Bi_continuum_noscale*yt
+        ### materials
+        result['44Sc']  = self.Scale44Sc*self.histogram_44Sc_peaks_noscale*yt
+        result['44Sc'] += self.NormCont*self.ContScale_44Sc*self.histogram_44Sc_continuum_noscale*yt
+        ###
+        result['136Xe_2vbb'] = self.histogram_136Xe_2vbb*yt*self.Xe136_2vbb_T_1_2_central/(self.T12_136Xe_2vbb)
+        result['136Xe_0vbb'] = self.AXe136*yt*self.histogram_136Xe_0vbb_noscale
+        return(result)
+    def getBinnedExpectation(self, 
+                            AXe136 , 
+                            Scale208Tl,
+                            Norm214Bi,
+                            NormCont, 
+                            ContSlope,
+                            Scale137Xe,
+                            T12_136Xe_2vbb
+                            ):
+
+        
+        result  = np.zeros(len(self.binEdges)-1)
+        components = self.getBinnedComponents(  
+                                                AXe136         = AXe136, 
+                                                Scale208Tl     = Scale208Tl, 
+                                                Norm214Bi      = Norm214Bi, 
+                                                NormCont       = NormCont,
+                                                ContSlope      = ContSlope, 
+                                                Scale137Xe     = Scale137Xe,
+                                                T12_136Xe_2vbb = T12_136Xe_2vbb)
+        
+        for key in sorted(components.keys()):
+            result+=components[key]
+        return(result)
+    '''
     ####
     def get_136Xe_2vbb(self):
         return self.hist_136Xe_2vbb_nonorm*self.fidMass * self.livetime*self.Xe136_2vbb_T_1_2_central/(self.T12_136Xe_2vbb)
@@ -188,95 +318,16 @@ class AnalyticCalculator:
                    interpolate.interp1d(energies_cumulative, cumulative, kind="cubic"))
     ###
     
-    def setBins(self, bin_edges):
-        self.binEdges = bin_edges 
+
         self.make_cumulative_splines()
         self.cache_backgrounds()
         #self.cache_backgrounds()
     
-    def getMaterialBkg(self,
-                            Scale208Tl, 
-                            Scale214Bi,
-                            Scale44Sc):
-        
-        result  = np.zeros(len(self.binEdges)-1, dtype = float)
-        result += Scale214Bi*self.hist_214Bi_nonorm
-        result += Scale44Sc*self.hist_44Sc_nonorm
-        result += Scale208Tl*self.hist_208Tl_nonorm
-        return(result)
-      
-    def getIntrinsicBackground(self):
-        result  = np.zeros(len(self.binEdges)-1, dtype = float)
-        result += self.get_8B()
-        result += self.get_137Xe()
-        result += self.get_222Rn()
-        result += self.get_136Xe_2vbb()
-        return(result)
-    
-    def getBinnedComponents(self, 
-                            AXe136 , 
-                            Scale208Tl, 
-                            Scale214Bi, 
-                            Scale44Sc, 
-                            Scale137Xe, 
-                            Scale222Rn, 
-                            Scale8B, 
-                            T12_136Xe_2vbb, 
-                            ): 
-        
-        self.AXe136     = AXe136
-        ###
-        self.Scale214Bi = Scale214Bi
-        self.Scale44Sc  = Scale44Sc
-        self.Scale208Tl = Scale208Tl
-        ###
-        self.Scale137Xe = Scale137Xe
-        self.Scale222Rn = Scale222Rn
-        self.Scale8B    = Scale8B
-        ###
-        self.T12_136Xe_2vbb = T12_136Xe_2vbb
-        ###
-        result = {}
-        result['137Xe']   = self.get_137Xe()
-        result['222Rn']   = self.get_222Rn()
-        result['8B']      = self.get_8B()
-        result['136Xe_2vbb'] =  self.get_136Xe_2vbb()
-        result['214Bi']   = self.hist_214Bi_nonorm*self.Scale214Bi*self.fidMass * self.livetime
-        result['44Sc']    = self.hist_44Sc_nonorm*self.Scale44Sc*self.fidMass * self.livetime
-        result['208Tl']   = self.hist_208Tl_nonorm*self.Scale208Tl*self.fidMass * self.livetime
-        result['136Xe_0vbb'] = self.getXe136_0vbb()
-        return(result)
-        
-    def getBinnedExpectation(self, 
-                            AXe136, 
-                            Scale208Tl, 
-                            Scale214Bi, 
-                            Scale44Sc, 
-                            Scale137Xe, 
-                            Scale222Rn, 
-                            Scale8B,
-                            T12_136Xe_2vbb
-                            ):
 
         
-        result  = np.zeros(len(self.binEdges)-1)
-        components = self.getBinnedComponents(  
-                                                AXe136     = AXe136, 
-                                                Scale208Tl = Scale208Tl, 
-                                                Scale214Bi = Scale214Bi, 
-                                                Scale44Sc  = Scale44Sc, 
-                                                Scale137Xe = Scale137Xe, 
-                                                Scale222Rn = Scale222Rn,
-                                                Scale8B    = Scale8B, 
-                                                T12_136Xe_2vbb = T12_136Xe_2vbb)
-        
-        for key in sorted(components.keys()):
-            result+=components[key]
-        return(result)
     
-    def spectrum_136Xe_0vbb(self, E_array): 
-        sigma = (self.a / np.sqrt(self.QXe136) + self.b)*self.QXe136
-        return (self.AXe136*self.Xe136eff /(np.sqrt(2*np.pi) *sigma) * np.exp( - 0.5*(E_array - self.QXe136)**2 / (sigma**2 ) )  )
+    
+
     
     def getXe136_0vbb(self):
         sigma = (self.a / np.sqrt(self.QXe136) + self.b)*self.QXe136
@@ -286,3 +337,4 @@ class AnalyticCalculator:
         # so bin content  = A*0.5*(erf(bin_edge_i+1) - erf(bin_edge_i))
         return self.AXe136*0.5*(special.erf(xi_vals[1:]) - special.erf(xi_vals[0:-1]) )*self.fidMass*self.livetime*self.Xe136eff
 
+    '''
