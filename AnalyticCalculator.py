@@ -214,7 +214,11 @@ class AnalyticCalculator:
             cur_spectrum = getattr(self, "spectrum_%s"%bkg)
             cur_histogram = np.zeros(len(self.binEdges)-1, dtype=float)
             for i in range(0, len(cur_histogram)):
-                cur_histogram[i] = integrate.quad(cur_spectrum, self.binEdges[i], self.binEdges[i+1])[0]
+                n_2segs = min(20, int((self.binEdges[i+1]-self.binEdges[i])/0.5 ))
+                sample_x = np.linspace(self.binEdges[i],self.binEdges[i+1],2*n_2segs+1)
+                sample_y = cur_spectrum(sample_x)
+                cur_histogram[i] = integrate.simps(sample_y,sample_x)
+                #cur_histogram[i] = integrate.quad(cur_spectrum, self.binEdges[i], self.binEdges[i+1])[0]
             setattr(self,"histogram_%s"%bkg, np.array(cur_histogram))
         return
     def setBins(self, bin_edges):
@@ -227,7 +231,9 @@ class AnalyticCalculator:
                             NormCont,
                             ContSlope,
                             Scale137Xe, 
-                            T12_136Xe_2vbb
+                            T12_136Xe_2vbb,
+                            Scale8B, 
+                            Scale222Rn
                             ): 
         yt = self.fidMass * self.livetime
         ###
@@ -237,6 +243,8 @@ class AnalyticCalculator:
         self.Norm214Bi = Norm214Bi
         self.Scale137Xe = Scale137Xe
         self.T12_136Xe_2vbb = T12_136Xe_2vbb
+        self.Scale8B = Scale8B
+        self.Scale222Rn = Scale222Rn
         if self.ContSlope != ContSlope: 
             self.ContSlope = ContSlope
             self.cache_histograms( ["208Tl_continuum_noscale",
@@ -268,7 +276,9 @@ class AnalyticCalculator:
                             NormCont, 
                             ContSlope,
                             Scale137Xe,
-                            T12_136Xe_2vbb
+                            T12_136Xe_2vbb,
+                            Scale8B, 
+                            Scale222Rn
                             ):
 
         
@@ -280,7 +290,9 @@ class AnalyticCalculator:
                                                 NormCont       = NormCont,
                                                 ContSlope      = ContSlope, 
                                                 Scale137Xe     = Scale137Xe,
-                                                T12_136Xe_2vbb = T12_136Xe_2vbb)
+                                                T12_136Xe_2vbb = T12_136Xe_2vbb,
+                                                Scale8B        = Scale8B, 
+                                                Scale222Rn     = Scale222Rn)
         
         for key in sorted(components.keys()):
             result+=components[key]
